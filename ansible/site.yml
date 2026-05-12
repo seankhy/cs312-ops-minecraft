@@ -1,0 +1,101 @@
+---
+- name: Configure Minecraft server
+  hosts: minecraft
+  become: true
+
+  vars:
+    ecr_registry: "627060426125.dkr.ecr.us-east-1.amazonaws.com"
+    ecr_repo: "627060426125.dkr.ecr.us-east-1.amazonaws.com/cs312-minecraft"
+    image_tag: "mc-1.21.4-build2"
+    s3_bucket: "cs312-hsunyu-minecraft-backups"
+    data_dir: "/opt/minecraft/data"
+    region: "us-east-1"
+
+  tasks:
+    - name: Install runtime prerequisites
+      ansible.builtin.apt:
+        name:
+          - python3-pip
+          - unzip
+          - curl
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Ensure Docker is running and enabled
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create Minecraft data directory
+      ansible.builtin.file:
+        path: "{{ data_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Authenticate Docker to ECR using instance profile
+      ansible.builtin.shell:
+        cmd: >
+          aws ecr get-login-password --region {{ region }} |
+          docker login --username AWS --password-stdin {{ ecr_registry }}
+      changed_when: false
+
+    - name: Pull pinned Minecraft image from ECR
+      ansible.builtin.shell:
+        cmd: docker pull {{ ecr_repo }}:{{ image_tag }}
+      register: pull_result
+      changed_when: "'Image is up to date' not in pull_result.stdout and 'Already exists' not in pull_result.stdout"
+
+    - name: Check if world backup exists in S3
+      ansible.builtin.command:
+        cmd: aws s3 ls s3://{{ s3_bucket }}/world.tar.gz
+      register: s3_check
+      failed_when: false
+      changed_when: false
+
+    - name: Restore world data from S3
+      ansible.builtin.shell:
+        cmd: >
+          aws s3 cp s3://{{ s3_bucket }}/world.tar.gz /tmp/world.tar.gz &&
+          tar -xzf /tmp/world.tar.gz -C {{ data_dir }}
+      when: s3_check.rc == 0
+      args:
+        creates: "{{ data_dir }}/world"
+
+    - name: Check if Minecraft container is already running
+      ansible.builtin.command:
+        cmd: docker ps --filter name=minecraft --filter status=running -q
+      register: container_running
+      changed_when: false
+      failed_when: false
+
+    - name: Remove existing Minecraft containers if present
+      ansible.builtin.shell:
+        cmd: |
+          docker rm -f minecraft 2>/dev/null || true
+          docker rm -f minecraft-minecraft-1 2>/dev/null || true
+      changed_when: false
+      when: container_running.stdout == ""
+
+    - name: Start Minecraft container
+      ansible.builtin.shell:
+        cmd: >
+          docker run -d
+          --name minecraft
+          --restart unless-stopped
+          -p 25565:25565
+          -v {{ data_dir }}:/data
+          -e EULA=TRUE
+          -e MEMORY=1024M
+          -e MOTD="kuohsu Minecraft Server"
+          {{ ecr_repo }}:{{ image_tag }}
+      when: container_running.stdout == ""
+      changed_when: true
+
+    - name: Verify Minecraft container is running
+      ansible.builtin.command:
+        cmd: docker ps --filter name=minecraft --filter status=running
+      register: container_status
+      changed_when: false
+      failed_when: "'minecraft' not in container_status.stdout"
