@@ -18,15 +18,48 @@
           - python3-pip
           - unzip
           - curl
+          - ca-certificates
+          - gnupg
         state: present
         update_cache: true
         cache_valid_time: 3600
+
+    - name: Add Docker GPG key
+      ansible.builtin.shell:
+        cmd: |
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+          chmod a+r /etc/apt/keyrings/docker.asc
+        creates: /etc/apt/keyrings/docker.asc
+
+    - name: Add Docker apt repository
+      ansible.builtin.shell:
+        cmd: |
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+        creates: /etc/apt/sources.list.d/docker.list
+
+    - name: Install Docker Engine
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+        update_cache: true
 
     - name: Ensure Docker is running and enabled
       ansible.builtin.service:
         name: docker
         state: started
         enabled: true
+
+    - name: Install AWS CLI
+      ansible.builtin.shell:
+        cmd: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+          unzip -o /tmp/awscliv2.zip -d /tmp
+          /tmp/aws/install --update
+        creates: /usr/local/bin/aws
 
     - name: Create Minecraft data directory
       ansible.builtin.file:
@@ -87,6 +120,7 @@
           -p 25565:25565
           -v {{ data_dir }}:/data
           -e EULA=TRUE
+          -e VERSION=1.21.4
           {{ ecr_repo }}:{{ image_tag }}
       when: container_running.stdout == ""
       changed_when: true
