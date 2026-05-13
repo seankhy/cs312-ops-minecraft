@@ -81,3 +81,20 @@ resource "aws_instance" "minecraft" {
     Owner = var.onid
   }
 }
+
+resource "null_resource" "ansible" {
+  depends_on = [aws_instance.minecraft]
+
+  triggers = {
+    instance_id = aws_instance.minecraft.id
+  }
+
+  provisioner "local-exec" {
+    command = <<EOT
+      sleep 20 && \
+      sed -i '' "s/ansible_host=[0-9.]*/ansible_host=${aws_instance.minecraft.public_ip}/" ansible/hosts.ini && \
+      ansible-playbook -i ansible/hosts.ini ansible/site.yml
+    EOT
+    working_dir = path.module
+  }
+}
