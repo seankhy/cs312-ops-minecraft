@@ -6,7 +6,7 @@
   vars:
     ecr_registry: "627060426125.dkr.ecr.us-east-1.amazonaws.com"
     ecr_repo: "627060426125.dkr.ecr.us-east-1.amazonaws.com/cs312-minecraft"
-    image_tag: "mc-1.21.4-build2"
+    image_tag: "v1.0.1"
     s3_bucket: "cs312-hsunyu-minecraft-backups"
     data_dir: "/opt/minecraft/data"
     region: "us-east-1"
@@ -96,20 +96,27 @@
       args:
         creates: "{{ data_dir }}/world"
 
-    - name: Check if Minecraft container is already running
-      ansible.builtin.command:
-        cmd: docker ps --filter name=minecraft --filter status=running -q
-      register: container_running
+    - name: Check running container image
+      ansible.builtin.shell:
+        cmd: docker inspect minecraft --format '{% raw %}{{.Image}}{% endraw %}' 2>/dev/null || echo "none"
+      register: running_image
       changed_when: false
       failed_when: false
 
-    - name: Remove existing Minecraft containers if present
+    - name: Get current image digest
+      ansible.builtin.shell:
+        cmd: docker inspect {{ ecr_repo }}:{{ image_tag }} --format '{% raw %}{{.Id}}{% endraw %}' 2>/dev/null || echo "unknown"
+      register: new_image
+      changed_when: false
+      failed_when: false
+
+    - name: Remove container if image changed or not running
       ansible.builtin.shell:
         cmd: |
           docker rm -f minecraft 2>/dev/null || true
           docker rm -f minecraft-minecraft-1 2>/dev/null || true
       changed_when: false
-      when: container_running.stdout == ""
+      when: running_image.stdout != new_image.stdout
 
     - name: Start Minecraft container
       ansible.builtin.shell:
@@ -122,7 +129,7 @@
           -e EULA=TRUE
           -e VERSION=1.21.4
           {{ ecr_repo }}:{{ image_tag }}
-      when: container_running.stdout == ""
+      when: running_image.stdout != new_image.stdout
       changed_when: true
 
     - name: Verify Minecraft container is running
