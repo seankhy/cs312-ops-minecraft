@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minecraft-config
+data:
+  EULA: "TRUE"
+  VERSION: "1.21.4"
+  MOTD: "Hsun-Yu Kuo - 934293958"
+  MAX_PLAYERS: "10"
+  DIFFICULTY: "normal"

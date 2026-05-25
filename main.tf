@@ -22,7 +22,7 @@ data "aws_ami" "ubuntu" {
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-resolute-26.04-amd64-server-*"]
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
   }
 
   filter {
@@ -76,25 +76,52 @@ resource "aws_instance" "minecraft" {
     volume_size = 20
   }
 
+  user_data = <<-EOF
+    #!/bin/bash
+    # Install k3s (same as lab 7)
+    curl -sfL https://get.k3s.io | sh -
+
+    # Let ubuntu user run kubectl without sudo (same as lab 7)
+    mkdir -p /home/ubuntu/.kube
+    cp /etc/rancher/k3s/k3s.yaml /home/ubuntu/.kube/config
+    chown ubuntu:ubuntu /home/ubuntu/.kube/config
+    echo 'export KUBECONFIG=~/.kube/config' >> /home/ubuntu/.bashrc
+
+    # Install AWS CLI
+    apt-get update -y
+    apt-get install -y unzip curl
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+    unzip -o /tmp/awscliv2.zip -d /tmp
+    /tmp/aws/install
+
+    # ECR credential helper for containerd (node-level, uses IAM instance profile)
+    # This lets k3s pull from ECR without hardcoded credentials
+    mkdir -p /var/lib/rancher/k3s/agent/etc/containerd
+    cat > /etc/rancher/k3s/registries.yaml <<'REGISTRY'
+    mirrors:
+      "627060426125.dkr.ecr.us-east-1.amazonaws.com":
+        endpoint:
+          - "https://627060426125.dkr.ecr.us-east-1.amazonaws.com"
+    configs:
+      "627060426125.dkr.ecr.us-east-1.amazonaws.com":
+        auth:
+          username: AWS
+          password: "$(aws ecr get-login-password --region us-east-1)"
+    REGISTRY
+
+    # Restart k3s to pick up registry config
+    systemctl restart k3s
+
+    # Create data dir for world restore
+    mkdir -p /opt/minecraft/data
+
+    # Restore world from S3 using instance profile (no hardcoded creds)
+    aws s3 cp s3://cs312-hsunyu-minecraft-backups/world.tar.gz /tmp/world.tar.gz && \
+      tar -xzf /tmp/world.tar.gz -C /opt/minecraft/data || true
+  EOF
+
   tags = {
-    Name  = "cs312-minecraft"
+    Name  = "cs312-minecraft-ops4"
     Owner = var.onid
-  }
-}
-
-resource "null_resource" "ansible" {
-  depends_on = [aws_instance.minecraft]
-
-  triggers = {
-    instance_id = aws_instance.minecraft.id
-  }
-
-  provisioner "local-exec" {
-    command = <<EOT
-      sleep 20 && \
-      sed -i '' "s/ansible_host=[0-9.]*/ansible_host=${aws_instance.minecraft.public_ip}/" ansible/hosts.ini && \
-      ansible-playbook -i ansible/hosts.ini ansible/site.yml
-    EOT
-    working_dir = path.module
   }
 }

@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minecraft
+  labels:
+    app: minecraft
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minecraft
+  template:
+    metadata:
+      labels:
+        app: minecraft
+    spec:
+      containers:
+        - name: minecraft
+          image: 627060426125.dkr.ecr.us-east-1.amazonaws.com/cs312-minecraft:v1.0.1
+          envFrom:
+            - configMapRef:
+                name: minecraft-config
+          ports:
+            - containerPort: 25565
+          # startupProbe: give JVM up to 10 minutes to start before liveness kicks in
+          startupProbe:
+            tcpSocket:
+              port: 25565
+            failureThreshold: 60
+            periodSeconds: 10
+          # livenessProbe: restart pod if port stops responding
+          livenessProbe:
+            tcpSocket:
+              port: 25565
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 3
+          # readinessProbe: stop sending traffic if port not ready
+          readinessProbe:
+            tcpSocket:
+              port: 25565
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: world-data
+              mountPath: /data
+      volumes:
+        - name: world-data
+          persistentVolumeClaim:
+            claimName: minecraft-world-pvc
