@@ -6,7 +6,7 @@ variable "onid" {
 variable "instance_type" {
   description = "EC2 instance type for the Minecraft server. t3.medium recommended for Minecraft."
   type        = string
-  default     = "t3.small"
+  default     = "t3.large"
 }
 
 variable "key_name" {
