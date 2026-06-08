@@ -1,0 +1,8 @@
+# kube-prometheus-stack install command (Ops 5)
+helm install monitoring prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace \
+  --set grafana.service.type=NodePort \
+  --set grafana.service.nodePort=31000 \
+  --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
+  --set prometheus.prometheusSpec.ruleSelectorNilUsesHelmValues=false \
+  --set grafana.sidecar.image.tag=1.28.0
