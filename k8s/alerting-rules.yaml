@@ -1,0 +1,49 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cs312-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: cs312.rules
+      rules:
+        - alert: PodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="default"}[5m]) > 3
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod {{ $labels.pod }} is crash looping"
+            runbook: |
+              1. Run: kubectl describe pod {{ $labels.pod }} -n {{ $labels.namespace }}
+              2. Check Events section for error messages
+              3. Check logs: kubectl logs {{ $labels.pod }} --previous
+              4. If bad image, rollback: kubectl rollout undo deployment/minecraft
+
+        - alert: MinecraftServerDown
+          expr: minecraft_status_healthy == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Minecraft server is unreachable by players"
+            runbook: |
+              1. Run: kubectl get pods -n default
+              2. Check pod status: kubectl describe pod -l app=minecraft
+              3. Check logs: kubectl logs deployment/minecraft -c minecraft
+              4. If crashing: kubectl rollout undo deployment/minecraft
+
+        - alert: HighNodeMemory
+          expr: 100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100) > 80
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node memory usage above 80%"
+            runbook: |
+              1. Run: kubectl top pods --all-namespaces --sort-by=memory
+              2. Identify pod consuming the most memory
+              3. Check if Minecraft is near its limit: kubectl describe pod -l app=minecraft
+              4. Consider increasing memory limits or restarting the pod

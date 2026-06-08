@@ -13,6 +13,9 @@ spec:
     metadata:
       labels:
         app: minecraft
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
     spec:
       containers:
         - name: minecraft
@@ -22,20 +25,17 @@ spec:
                 name: minecraft-config
           ports:
             - containerPort: 25565
-          # startupProbe: give JVM up to 10 minutes to start before liveness kicks in
           startupProbe:
             tcpSocket:
               port: 25565
             failureThreshold: 60
             periodSeconds: 10
-          # livenessProbe: restart pod if port stops responding
           livenessProbe:
             tcpSocket:
               port: 25565
             initialDelaySeconds: 60
             periodSeconds: 20
             failureThreshold: 3
-          # readinessProbe: stop sending traffic if port not ready
           readinessProbe:
             tcpSocket:
               port: 25565
@@ -52,6 +52,20 @@ spec:
           volumeMounts:
             - name: world-data
               mountPath: /data
+        - name: mc-monitor
+          image: itzg/mc-monitor
+          args:
+            - "export-for-prometheus"
+            - "-servers=localhost:25565"
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "50m"
       volumes:
         - name: world-data
           persistentVolumeClaim:
